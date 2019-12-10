@@ -462,8 +462,6 @@ typedef llvm::TypeBuilder<ptask, false> ptask_builder;
 typedef llvm::TypeBuilder<pshareds, false> pshareds_builder;
 
 Function *formatFunctionToTask(Function *extracted, Instruction *CallSite) {
-  // TODO: Fix this function to support call sites that are invokes instead of
-  // calls.
   BasicBlock *Normal = nullptr;
   BasicBlock *Unwind = nullptr;
   std::vector<Value *> LoadedCapturedArgs;
