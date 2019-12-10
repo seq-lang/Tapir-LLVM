@@ -23,8 +23,8 @@ class CilkRABI : public TapirTarget {
 public:
   CilkRABI();
   Value *lowerGrainsizeCall(CallInst *GrainsizeCall) override final;
-  void createSync(SyncInst &inst, ValueToValueMapTy &DetachCtxToStackFrame)
-    override final;
+  void createSync(SyncInst &inst,
+                  ValueToValueMapTy &DetachCtxToStackFrame) override final;
 
   Function *createDetach(DetachInst &Detach,
                          ValueToValueMapTy &DetachCtxToStackFrame,
@@ -38,6 +38,6 @@ public:
   struct __cilkrts_worker {};
 };
 
-}  // end of llvm namespace
+} // namespace llvm
 
 #endif

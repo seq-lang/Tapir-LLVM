@@ -1,17 +1,18 @@
-//===- SyncElimination.cpp - Eliminate unnecessary sync calls ----------------===//
+//===- SyncElimination.cpp - Eliminate unnecessary sync calls
+//----------------===//
 
 #include "llvm/Transforms/Tapir.h"
 
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/IR/CFG.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/IR/Instruction.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/CFG.h"
-#include "llvm/ADT/SmallSet.h"
 
 #include <deque>
 #include <map>
@@ -43,7 +44,7 @@ struct SyncElimination : public FunctionPass {
     while (true) {
       bool Changed = false;
 
-      for (BasicBlock &block: F) {
+      for (BasicBlock &block : F) {
         if (isa<SyncInst>(block.getTerminator())) {
           if (processSyncInstBlock(block)) {
             Changed = true;
@@ -62,7 +63,6 @@ struct SyncElimination : public FunctionPass {
   }
 
 private:
-
   // We will explain what Rosetta and Vegas are later. Or rename them.
   // We promise.
 
@@ -83,7 +83,7 @@ private:
       const BasicBlock *Current = Frontier.front();
       Frontier.pop_front();
 
-      for (const BasicBlock *Pred: predecessors(Current)) {
+      for (const BasicBlock *Pred : predecessors(Current)) {
         // TODO@jiahao: Investigate potential issues with continue edges here.
 
         if (Visited.count(Pred) > 0) {
@@ -99,9 +99,9 @@ private:
         DetachLevel[Pred] = DetachLevel[Current];
 
         if (isa<ReattachInst>(Pred->getTerminator())) {
-          DetachLevel[Pred] ++;
+          DetachLevel[Pred]++;
         } else if (isa<DetachInst>(Pred->getTerminator())) {
-          DetachLevel[Pred] --;
+          DetachLevel[Pred]--;
         }
 
         if (DetachLevel[Pred] > 0) {
@@ -117,8 +117,8 @@ private:
 
   // Vegas-finding code
   //
-  // We run BFS starting from the sync block, following all foward edges, and stop a branch whenever
-  // we hit another sync block.
+  // We run BFS starting from the sync block, following all foward edges, and
+  // stop a branch whenever we hit another sync block.
 
   void findVegas(const BasicBlock &BB, BasicBlockSet &OutputSet) {
     assert(isa<SyncInst>(BB.getTerminator()));
@@ -132,7 +132,7 @@ private:
       const BasicBlock *Current = Frontier.front();
       Frontier.pop_front();
 
-      for (const BasicBlock *Succ: successors(Current)) {
+      for (const BasicBlock *Succ : successors(Current)) {
         if (Visited.count(Succ) > 0) {
           continue;
         }
@@ -166,7 +166,8 @@ private:
     }
   }
 
-  bool isSyncEliminationLegal(const BasicBlockSet &RosettaSet, const BasicBlockSet &VegasSet) {
+  bool isSyncEliminationLegal(const BasicBlockSet &RosettaSet,
+                              const BasicBlockSet &VegasSet) {
     AliasAnalysis *AA = &getAnalysis<AAResultsWrapperPass>().getAAResults();
 
     for (const BasicBlock *RBB : RosettaSet) {
@@ -190,15 +191,19 @@ private:
             if (!!RC) {
               // If RI is a call/invoke
               if (instTouchesMemory(VI) &&
-                  isModOrRefSet(AA->getModRefInfo(const_cast<Instruction *>(&VI), RC))) {
-                errs() << "SyncElimination:     Conflict found between " << RI << " and " << VI << "\n";
+                  isModOrRefSet(
+                      AA->getModRefInfo(const_cast<Instruction *>(&VI), RC))) {
+                errs() << "SyncElimination:     Conflict found between " << RI
+                       << " and " << VI << "\n";
                 return false;
               }
             } else if (!!VC) {
               // If VI is a call/invoke
               if (instTouchesMemory(RI) &&
-                  isModOrRefSet(AA->getModRefInfo(const_cast<Instruction *>(&RI), VC))) {
-                errs() << "SyncElimination:     Conflict found between " << RI << " and " << VI << "\n";
+                  isModOrRefSet(
+                      AA->getModRefInfo(const_cast<Instruction *>(&RI), VC))) {
+                errs() << "SyncElimination:     Conflict found between " << RI
+                       << " and " << VI << "\n";
                 return false;
               }
             } else {
@@ -210,10 +215,14 @@ private:
               MemoryLocation VML = MemoryLocation::get(&VI);
               MemoryLocation RML = MemoryLocation::get(&RI);
 
-              if (AA->alias(RML, VML) && (isModSet(AA->getModRefInfo(&RI, RML)) || isModSet(AA->getModRefInfo(&VI, VML)))) {
-                // If the two memory location can potentially be aliasing each other, and
-                // at least one instruction modifies its memory location.
-                errs() << "SyncElimination:     Conflict found between " << RI << " and " << VI << "\n";
+              if (AA->alias(RML, VML) &&
+                  (isModSet(AA->getModRefInfo(&RI, RML)) ||
+                   isModSet(AA->getModRefInfo(&VI, VML)))) {
+                // If the two memory location can potentially be aliasing each
+                // other, and at least one instruction modifies its memory
+                // location.
+                errs() << "SyncElimination:     Conflict found between " << RI
+                       << " and " << VI << "\n";
                 return false;
               }
             }
@@ -233,24 +242,27 @@ private:
     findRosetta(BB, RosettaSet);
     findVegas(BB, VegasSet);
 
-    errs() << "SyncElimination:     Blocks found in the Rosetta set: " << "\n";
-    for (const BasicBlock *BB: RosettaSet) {
+    errs() << "SyncElimination:     Blocks found in the Rosetta set: "
+           << "\n";
+    for (const BasicBlock *BB : RosettaSet) {
       errs() << "SyncElimination:         " + BB->getName() << "\n";
     }
 
-    errs() << "SyncElimination:     Blocks found in the Vegas set: " << "\n";
-    for (const BasicBlock *BB: VegasSet) {
+    errs() << "SyncElimination:     Blocks found in the Vegas set: "
+           << "\n";
+    for (const BasicBlock *BB : VegasSet) {
       errs() << "SyncElimination:         " + BB->getName() << "\n";
     }
 
     if (isSyncEliminationLegal(RosettaSet, VegasSet)) {
       SyncInst *Sync = dyn_cast<SyncInst>(BB.getTerminator());
       assert(Sync != NULL);
-      BasicBlock* suc = Sync->getSuccessor(0);
+      BasicBlock *suc = Sync->getSuccessor(0);
       IRBuilder<> Builder(Sync);
       Builder.CreateBr(suc);
       Sync->eraseFromParent();
-      errs() << "SyncElimination:     A sync is removed. " << "\n";
+      errs() << "SyncElimination:     A sync is removed. "
+             << "\n";
       return true;
     }
 
@@ -258,10 +270,11 @@ private:
   }
 };
 
-}
+} // namespace
 
 char SyncElimination::ID = 0;
-static RegisterPass<SyncElimination> X("sync-elimination", "Do sync-elimination's pass", false, false);
+static RegisterPass<SyncElimination>
+    X("sync-elimination", "Do sync-elimination's pass", false, false);
 
 // Public interface to the SyncElimination pass
 FunctionPass *llvm::createSyncEliminationPass() {

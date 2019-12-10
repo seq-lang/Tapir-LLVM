@@ -36,8 +36,8 @@ bool populateDetachedCFG(const DetachInst &Detach, DominatorTree &DT,
                          SmallPtrSetImpl<BasicBlock *> &functionPieces,
                          SmallPtrSetImpl<BasicBlock *> &ExitBlocks);
 
-Function *extractDetachBodyToFunction(DetachInst &Detach,
-                                      DominatorTree &DT, AssumptionCache &AC,
+Function *extractDetachBodyToFunction(DetachInst &Detach, DominatorTree &DT,
+                                      AssumptionCache &AC,
                                       Instruction **CallSite = nullptr);
 
 class TapirTarget {
@@ -56,6 +56,6 @@ public:
 
 TapirTarget *getTapirTargetFromType(TapirTargetType Type);
 
-}  // end namepsace llvm
+} // namespace llvm
 
 #endif

@@ -41,13 +41,11 @@ class Type;
 /// lifting a Tapir loop into a separate helper function.
 class LoopOutline {
 public:
-  LoopOutline(Loop *OrigLoop, ScalarEvolution &SE,
-              LoopInfo *LI, DominatorTree *DT,
-              AssumptionCache *AC,
+  LoopOutline(Loop *OrigLoop, ScalarEvolution &SE, LoopInfo *LI,
+              DominatorTree *DT, AssumptionCache *AC,
               OptimizationRemarkEmitter &ORE)
       : OrigLoop(OrigLoop), SE(SE), LI(LI), DT(DT), AC(AC), ORE(ORE),
-        ExitBlock(nullptr)
-  {
+        ExitBlock(nullptr) {
     // Use the loop latch to determine the canonical exit block for this loop.
     TerminatorInst *TI = OrigLoop->getLoopLatch()->getTerminator();
     if (2 != TI->getNumSuccessors())
@@ -115,21 +113,23 @@ protected:
   /// special manner.
   BasicBlock *ExitBlock;
 
-// private:
-//   /// Report an analysis message to assist the user in diagnosing loops that are
-//   /// not transformed.  These are handled as LoopAccessReport rather than
-//   /// VectorizationReport because the << operator of LoopSpawningReport returns
-//   /// LoopAccessReport.
-//   void emitAnalysis(const LoopAccessReport &Message) const {
-//     emitAnalysisDiag(OrigLoop, *ORE, Message);
-//   }
+  // private:
+  //   /// Report an analysis message to assist the user in diagnosing loops
+  //   that are
+  //   /// not transformed.  These are handled as LoopAccessReport rather than
+  //   /// VectorizationReport because the << operator of LoopSpawningReport
+  //   returns
+  //   /// LoopAccessReport.
+  //   void emitAnalysis(const LoopAccessReport &Message) const {
+  //     emitAnalysisDiag(OrigLoop, *ORE, Message);
+  //   }
 };
 
 /// The LoopSpawning Pass.
 struct LoopSpawningPass : public PassInfoMixin<LoopSpawningPass> {
-  TapirTarget* tapirTarget;
+  TapirTarget *tapirTarget;
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM);
 };
-}
+} // namespace llvm
 
 #endif // LLVM_TRANSFORMS_TAPIR_LOOPSPAWNING_H

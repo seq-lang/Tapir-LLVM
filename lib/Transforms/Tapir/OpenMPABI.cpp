@@ -21,10 +21,10 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Transforms/Tapir/Outline.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/CodeExtractor.h"
 #include "llvm/Transforms/Utils/EscapeEnumerator.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/TapirUtils.h"
-#include "llvm/Transforms/Utils/CodeExtractor.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 
 using namespace llvm;
@@ -54,34 +54,28 @@ ExtractedToOutlinedMapTy ExtractedToOutlinedMap;
 typedef DenseMap<Function *, Function *> OutlinedToEntryMapTy;
 OutlinedToEntryMapTy OutlinedToEntryMap;
 
-Value *emitTaskInit(Function *Caller,
-                                     IRBuilder<> &CallerIRBuilder,
-                                     IRBuilder<> &CallerAllocaIRBuilder,
-                                     Function *ForkedFn,
-                                     ArrayRef<Value *> LoadedCapturedArgs);
+Value *emitTaskInit(Function *Caller, IRBuilder<> &CallerIRBuilder,
+                    IRBuilder<> &CallerAllocaIRBuilder, Function *ForkedFn,
+                    ArrayRef<Value *> LoadedCapturedArgs);
 
 void emitBranch(BasicBlock *Target, IRBuilder<> &IRBuilder);
 
 Type *createKmpTaskTTy(Module *M, PointerType *KmpRoutineEntryPtrTy);
 
 Type *createKmpTaskTWithPrivatesTy(Type *data);
-Function *emitTaskOutlinedFunction(Module *M,
-                                                    Type *SharedsPtrTy,
-                                                    Function *ForkedFn);
+Function *emitTaskOutlinedFunction(Module *M, Type *SharedsPtrTy,
+                                   Function *ForkedFn);
 
 DenseMap<Argument *, Value *> startFunction(Function *Fn);
 
-Function *emitProxyTaskFunction(
-    Type *KmpTaskTWithPrivatesPtrTy, Type *SharedsPtrTy, Function *TaskFunction,
-    Value *TaskPrivatesMap);
+Function *emitProxyTaskFunction(Type *KmpTaskTWithPrivatesPtrTy,
+                                Type *SharedsPtrTy, Function *TaskFunction,
+                                Value *TaskPrivatesMap);
 
-void emitTaskwaitCall(Function *Caller,
-                                       IRBuilder<> &CallerIRBuilder,
-                                       const DataLayout &DL);
+void emitTaskwaitCall(Function *Caller, IRBuilder<> &CallerIRBuilder,
+                      const DataLayout &DL);
 
-PointerType *getIdentTyPointerTy() {
-  return PointerType::getUnqual(IdentTy);
-}
+PointerType *getIdentTyPointerTy() { return PointerType::getUnqual(IdentTy); }
 
 FunctionType *getOrCreateKmpc_MicroTy(LLVMContext &Context) {
   if (Kmpc_MicroTy == nullptr) {
@@ -98,8 +92,7 @@ PointerType *getKmpc_MicroPointerTy(LLVMContext &Context) {
   return PointerType::getUnqual(getOrCreateKmpc_MicroTy(Context));
 }
 
-Constant *createRuntimeFunction(OpenMPRuntimeFunction Function,
-                                                 Module *M) {
+Constant *createRuntimeFunction(OpenMPRuntimeFunction Function, Module *M) {
   auto *VoidTy = Type::getVoidTy(M->getContext());
   auto *VoidPtrTy = Type::getInt8PtrTy(M->getContext());
   auto *Int32Ty = Type::getInt32Ty(M->getContext());
@@ -123,7 +116,7 @@ Constant *createRuntimeFunction(OpenMPRuntimeFunction Function,
                           Int32PtrTy,   Int32PtrTy, Int32PtrTy,
                           Int32PtrTy,   Int32Ty,    Int32Ty};
     FunctionType *FnTy =
-      FunctionType::get(VoidTy, TypeParams, /*isVarArg*/ false);
+        FunctionType::get(VoidTy, TypeParams, /*isVarArg*/ false);
     RTLFn = M->getOrInsertFunction("__kmpc_for_static_init_4", FnTy);
     break;
   }
@@ -183,7 +176,7 @@ Constant *createRuntimeFunction(OpenMPRuntimeFunction Function,
     // Check: CGOpenMPRuntime::emitBarrierCall.
     Type *TypeParams[] = {IdentTyPtrTy, Int32Ty};
     FunctionType *FnTy =
-      FunctionType::get(Int32Ty, TypeParams, /*isVarArg=*/false);
+        FunctionType::get(Int32Ty, TypeParams, /*isVarArg=*/false);
     RTLFn = M->getOrInsertFunction("__kmpc_barrier", FnTy);
     break;
   }
@@ -192,16 +185,14 @@ Constant *createRuntimeFunction(OpenMPRuntimeFunction Function,
 }
 
 CallInst *emitRuntimeCall(Value *Callee, ArrayRef<Value *> Args,
-                                           const Twine &Name,
-                                           BasicBlock *Parent) {
+                          const Twine &Name, BasicBlock *Parent) {
   IRBuilder<> Builder(Parent);
   CallInst *call = Builder.CreateCall(Callee, Args, None, Name);
   return call;
 }
 
 CallInst *emitRuntimeCall(Value *Callee, ArrayRef<Value *> Args,
-                                           const Twine &Name,
-                                           IRBuilder<> &IRBuilder) {
+                          const Twine &Name, IRBuilder<> &IRBuilder) {
   CallInst *call = IRBuilder.CreateCall(Callee, Args, None, Name);
   return call;
 }
@@ -240,7 +231,7 @@ Value *getThreadID(Function *F, IRBuilder<> &IRBuilder) {
 }
 
 Value *getThreadID(Function *F) {
-  IRBuilder <> fstart(F->getEntryBlock().getFirstNonPHIOrDbgOrLifetime());
+  IRBuilder<> fstart(F->getEntryBlock().getFirstNonPHIOrDbgOrLifetime());
   return getThreadID(F, fstart);
 }
 
@@ -251,7 +242,8 @@ StructType *createSharedsTy(Function *F) {
   auto FnParams = F->getFunctionType()->params();
 
   if (FnParams.size() == 0) {
-    return StructType::create(SmallVector<llvm::Type*,1>(1,Type::getInt8Ty(C)), "anon");
+    return StructType::create(
+        SmallVector<llvm::Type *, 1>(1, Type::getInt8Ty(C)), "anon");
   }
 
   return StructType::create(FnParams, "anon");
@@ -261,17 +253,21 @@ Type *getOrCreateIdentTy(Module *M) {
   if (M->getTypeByName("ident_t") == nullptr) {
     auto *Int32Ty = Type::getInt32Ty(M->getContext());
     auto *Int8PtrTy = Type::getInt8PtrTy(M->getContext());
-    IdentTy = StructType::create(ArrayRef<llvm::Type*>({Int32Ty /* reserved_1 */,
-                                 Int32Ty /* flags */, Int32Ty /* reserved_2 */,
-                                 Int32Ty /* reserved_3 */,
-                                 Int8PtrTy /* psource */}), "ident_t");
-  } else if ((IdentTy = dyn_cast<StructType>(M->getTypeByName("ident_t")))->isOpaque()) {
-      auto *Int32Ty = Type::getInt32Ty(M->getContext());
-      auto *Int8PtrTy = Type::getInt8PtrTy(M->getContext());
-      IdentTy->setBody(ArrayRef<llvm::Type*>({Int32Ty /* reserved_1 */,
-                                   Int32Ty /* flags */, Int32Ty /* reserved_2 */,
-                                   Int32Ty /* reserved_3 */,
-                                   Int8PtrTy /* psource */}), "ident_t");
+    IdentTy = StructType::create(
+        ArrayRef<llvm::Type *>({Int32Ty /* reserved_1 */, Int32Ty /* flags */,
+                                Int32Ty /* reserved_2 */,
+                                Int32Ty /* reserved_3 */,
+                                Int8PtrTy /* psource */}),
+        "ident_t");
+  } else if ((IdentTy = dyn_cast<StructType>(M->getTypeByName("ident_t")))
+                 ->isOpaque()) {
+    auto *Int32Ty = Type::getInt32Ty(M->getContext());
+    auto *Int8PtrTy = Type::getInt8PtrTy(M->getContext());
+    IdentTy->setBody(ArrayRef<llvm::Type *>(
+                         {Int32Ty /* reserved_1 */, Int32Ty /* flags */,
+                          Int32Ty /* reserved_2 */, Int32Ty /* reserved_3 */,
+                          Int8PtrTy /* psource */}),
+                     "ident_t");
   }
   return IdentTy;
 }
@@ -280,7 +276,8 @@ PointerType *emitKmpRoutineEntryT(LLVMContext &C) {
   if (!KmpRoutineEntryPtrTy) {
     // Build typedef kmp_int32 (* kmp_routine_entry_t)(kmp_int32, void *); type.
     auto *Int32Ty = Type::getInt32Ty(C);
-    std::vector<Type *> KmpRoutineEntryTyArgs = {Int32Ty, Type::getInt8PtrTy(C)};
+    std::vector<Type *> KmpRoutineEntryTyArgs = {Int32Ty,
+                                                 Type::getInt8PtrTy(C)};
     KmpRoutineEntryPtrTy = PointerType::getUnqual(
         FunctionType::get(Int32Ty, KmpRoutineEntryTyArgs, false));
   }
@@ -289,18 +286,21 @@ PointerType *emitKmpRoutineEntryT(LLVMContext &C) {
 
 Type *createKmpTaskTTy(LLVMContext &C) {
   auto routine = emitKmpRoutineEntryT(C);
-  auto *KmpCmplrdataTy =
-      StructType::create(SmallVector<llvm::Type*,1>(1,routine),"kmp_cmplrdata_t");
-  auto *KmpTaskTTy = StructType::create(ArrayRef<llvm::Type*>({
-      Type::getInt8PtrTy(C), routine,
-      Type::getInt32Ty(C), KmpCmplrdataTy, KmpCmplrdataTy}), "kmp_task_t");
+  auto *KmpCmplrdataTy = StructType::create(
+      SmallVector<llvm::Type *, 1>(1, routine), "kmp_cmplrdata_t");
+  auto *KmpTaskTTy = StructType::create(
+      ArrayRef<llvm::Type *>({Type::getInt8PtrTy(C), routine,
+                              Type::getInt32Ty(C), KmpCmplrdataTy,
+                              KmpCmplrdataTy}),
+      "kmp_task_t");
 
   return KmpTaskTTy;
 }
 
 Type *createKmpTaskTWithPrivatesTy(Type *data) {
-  auto *KmpTaskTWithPrivatesTy =
-      StructType::create(ArrayRef<llvm::Type*>({createKmpTaskTTy(data->getContext()),data}),"kmp_task_t_with_privates");
+  auto *KmpTaskTWithPrivatesTy = StructType::create(
+      ArrayRef<llvm::Type *>({createKmpTaskTTy(data->getContext()), data}),
+      "kmp_task_t_with_privates");
   return KmpTaskTWithPrivatesTy;
 }
 
@@ -360,80 +360,78 @@ Value *llvm::OpenMPABI::lowerGrainsizeCall(CallInst *GrainsizeCall) {
   return StaticGrainsize;
 }
 
-void llvm::OpenMPABI::createSync(SyncInst &SI, ValueToValueMapTy &DetachCtxToStackFrame) {
+void llvm::OpenMPABI::createSync(SyncInst &SI,
+                                 ValueToValueMapTy &DetachCtxToStackFrame) {
   std::vector<Value *> Args = {DefaultOpenMPLocation,
-                            getThreadID(SI.getParent()->getParent())};
+                               getThreadID(SI.getParent()->getParent())};
   IRBuilder<> builder(&SI);
   emitRuntimeCall(
       createRuntimeFunction(OpenMPRuntimeFunction::OMPRTL__kmpc_omp_taskwait,
                             SI.getParent()->getParent()->getParent()),
-    Args, "", builder);
+      Args, "", builder);
 
   // Replace the detach with a branch to the continuation.
   BranchInst *PostSync = BranchInst::Create(SI.getSuccessor(0));
   ReplaceInstWithInst(&SI, PostSync);
 }
 
-
 typedef struct shar {
-    int **pth_counter;
-    int *pcounter;
-    int *pj;
-} *pshareds;
+  int **pth_counter;
+  int *pcounter;
+  int *pj;
+} * pshareds;
 
 namespace llvm {
-template<bool xcompile> class TypeBuilder<struct shar, xcompile> {
+template <bool xcompile> class TypeBuilder<struct shar, xcompile> {
 public:
   static StructType *get(LLVMContext &Context) {
     // If you cache this result, be sure to cache it separately
     // for each LLVMContext.
-    return StructType::get(Context, ArrayRef<Type*>({
-      TypeBuilder<int**, xcompile>::get(Context),
-      TypeBuilder<int*, xcompile>::get(Context),
-      TypeBuilder<int*, xcompile>::get(Context)}));
+    return StructType::get(
+        Context,
+        ArrayRef<Type *>({TypeBuilder<int **, xcompile>::get(Context),
+                          TypeBuilder<int *, xcompile>::get(Context),
+                          TypeBuilder<int *, xcompile>::get(Context)}));
   }
   // You may find this a convenient place to put some constants
   // to help with getelementptr.  They don't have any effect on
   // the operation of TypeBuilder.
-  enum Fields {
-    pth_counter,
-    pcounter,
-    pj
-  };
+  enum Fields { pth_counter, pcounter, pj };
 };
-}
+} // namespace llvm
 
 typedef struct task {
-    pshareds shareds;
-    int(* routine)(int,void*);
-    int part_id;
-// privates:
-    unsigned long long lb; // library always uses ULONG
-    unsigned long long ub;
-    int st;
-    int last;
-    int i;
-    int j;
-    int th;
-} *ptask, kmp_task_t;
+  pshareds shareds;
+  int (*routine)(int, void *);
+  int part_id;
+  // privates:
+  unsigned long long lb; // library always uses ULONG
+  unsigned long long ub;
+  int st;
+  int last;
+  int i;
+  int j;
+  int th;
+} * ptask, kmp_task_t;
 
 namespace llvm {
-template<bool xcompile> class TypeBuilder<struct task, xcompile> {
+template <bool xcompile> class TypeBuilder<struct task, xcompile> {
 public:
   static StructType *get(LLVMContext &Context) {
     // If you cache this result, be sure to cache it separately
     // for each LLVMContext.
-    return StructType::get(Context, ArrayRef<Type*>({
-      TypeBuilder<pshareds, xcompile>::get(Context),
-      TypeBuilder<int(*)(int,void*), xcompile>::get(Context),
-      TypeBuilder<int, xcompile>::get(Context),
-      TypeBuilder<unsigned long long, xcompile>::get(Context),
-      TypeBuilder<unsigned long long, xcompile>::get(Context),
-      TypeBuilder<int, xcompile>::get(Context),
-      TypeBuilder<int, xcompile>::get(Context),
-      TypeBuilder<int, xcompile>::get(Context),
-      TypeBuilder<int, xcompile>::get(Context),
-      TypeBuilder<int, xcompile>::get(Context)}));
+    return StructType::get(
+        Context, ArrayRef<Type *>(
+                     {TypeBuilder<pshareds, xcompile>::get(Context),
+                      TypeBuilder<int (*)(int, void *), xcompile>::get(Context),
+                      TypeBuilder<int, xcompile>::get(Context),
+                      TypeBuilder<unsigned long long, xcompile>::get(Context),
+                      TypeBuilder<unsigned long long, xcompile>::get(Context),
+                      TypeBuilder<int, xcompile>::get(Context),
+                      TypeBuilder<int, xcompile>::get(Context),
+                      TypeBuilder<int, xcompile>::get(Context),
+                      TypeBuilder<int, xcompile>::get(Context),
+                      TypeBuilder<int, xcompile>::get(Context)}));
   }
   // You may find this a convenient place to put some constants
   // to help with getelementptr.  They don't have any effect on
@@ -451,22 +449,22 @@ public:
     th,
   };
 };
-}
+} // namespace llvm
 
 typedef llvm::TypeBuilder<ptask, false> ptask_builder;
 typedef llvm::TypeBuilder<pshareds, false> pshareds_builder;
 
-Function* formatFunctionToTask(Function* extracted, Instruction* CallSite) {
+Function *formatFunctionToTask(Function *extracted, Instruction *CallSite) {
   // TODO: Fix this function to support call sites that are invokes instead of
   // calls.
   CallInst *cal = dyn_cast<CallInst>(CallSite);
   assert(cal && "Call instruction for task not found.");
-  std::vector<Value*> LoadedCapturedArgs;
-  for(auto& a:cal->arg_operands()) {
+  std::vector<Value *> LoadedCapturedArgs;
+  for (auto &a : cal->arg_operands()) {
     LoadedCapturedArgs.push_back(a);
   }
 
-  Module* M = extracted->getParent();
+  Module *M = extracted->getParent();
   LLVMContext &C = M->getContext();
   DataLayout DL(M);
   auto *SharedsTy = createSharedsTy(extracted);
@@ -475,7 +473,8 @@ Function* formatFunctionToTask(Function* extracted, Instruction* CallSite) {
   auto *SharedsTySize =
       CallerIRBuilder.getInt64(DL.getTypeAllocSize(SharedsTy));
   auto *KmpTaskTTy = createKmpTaskTTy(C);
-  auto *KmpTaskTWithPrivatesTy = createKmpTaskTWithPrivatesTy(SharedsTy);//KmpTaskTTy);
+  auto *KmpTaskTWithPrivatesTy =
+      createKmpTaskTWithPrivatesTy(SharedsTy); // KmpTaskTTy);
   auto *KmpTaskTWithPrivatesPtrTy =
       PointerType::getUnqual(KmpTaskTWithPrivatesTy);
   auto *KmpTaskTWithPrivatesTySize =
@@ -488,15 +487,13 @@ Function* formatFunctionToTask(Function* extracted, Instruction* CallSite) {
   auto *CopyFnTy = FunctionType::get(VoidTy, {Int8PtrTy}, true);
   auto *CopyFnPtrTy = PointerType::getUnqual(CopyFnTy);
 
-  auto *OutlinedFnTy = FunctionType::get(
-      VoidTy,
-      {Int32Ty, KmpTaskTWithPrivatesPtrTy},
-      false);
+  auto *OutlinedFnTy =
+      FunctionType::get(VoidTy, {Int32Ty, KmpTaskTWithPrivatesPtrTy}, false);
   auto *OutlinedFn = Function::Create(
       OutlinedFnTy, GlobalValue::InternalLinkage, ".omp_outlined.", M);
   StringRef ArgNames[] = {".global_tid.", "ptask"};
 
-  std::vector<Value*> out_args;
+  std::vector<Value *> out_args;
   for (auto &Arg : OutlinedFn->args()) {
     Arg.setName(ArgNames[out_args.size()]);
     out_args.push_back(&Arg);
@@ -512,27 +509,30 @@ Function* formatFunctionToTask(Function* extracted, Instruction* CallSite) {
 
   // Load the context struct so that we can access the task's accessed data
   auto *Context = IRBuilder.CreatePointerBitCastOrAddrSpaceCast(
-    IRBuilder.CreateConstGEP2_32(cast<PointerType>(out_args[1]->getType()->getScalarType())->getElementType(), out_args[1], 0, 1), SharedsPtrTy);//.back();
+      IRBuilder.CreateConstGEP2_32(
+          cast<PointerType>(out_args[1]->getType()->getScalarType())
+              ->getElementType(),
+          out_args[1], 0, 1),
+      SharedsPtrTy); //.back();
 
   std::vector<Value *> ForkedFnArgs;
 
+  ValueToValueMapTy valmap;
 
-  	ValueToValueMapTy valmap;
+  unsigned int argc = 0;
+  for (auto &arg : extracted->args()) {
+    auto *DataAddrEP = IRBuilder.CreateInBoundsGEP(
+        Context, {IRBuilder.getInt32(0), IRBuilder.getInt32(argc)});
+    auto *DataAddr = IRBuilder.CreateAlignedLoad(
+        DataAddrEP,
+        DL.getTypeAllocSize(DataAddrEP->getType()->getPointerElementType()));
+    valmap.insert(std::pair<Value *, Value *>(&arg, DataAddr));
+    argc++;
+  }
 
-    unsigned int argc = 0;
-    for (auto& arg : extracted->args()) {
-      auto *DataAddrEP = IRBuilder.CreateInBoundsGEP(
-          Context, {IRBuilder.getInt32(0), IRBuilder.getInt32(argc)});
-      auto *DataAddr = IRBuilder.CreateAlignedLoad(
-          DataAddrEP,
-          DL.getTypeAllocSize(DataAddrEP->getType()->getPointerElementType()));
-      valmap.insert(std::pair<Value*,Value*>(&arg,DataAddr));
-      argc++;
-    }
-
-  	SmallVector< ReturnInst *,5> retinsts;
-    CloneFunctionInto(OutlinedFn, extracted, valmap, true, retinsts);
-    IRBuilder.CreateBr(OutlinedFn->getBasicBlockList().getNextNode(*EntryBB));
+  SmallVector<ReturnInst *, 5> retinsts;
+  CloneFunctionInto(OutlinedFn, extracted, valmap, true, retinsts);
+  IRBuilder.CreateBr(OutlinedFn->getBasicBlockList().getNextNode(*EntryBB));
 
   // We only need tied tasks for now and that's what the 1 value is for.
   auto *TaskFlags = CallerIRBuilder.getInt32(1);
@@ -554,18 +554,19 @@ Function* formatFunctionToTask(Function* extracted, Instruction* CallSite) {
       KmpTaskTWithPrivatesTy, NewTaskNewTaskTTy,
       {CallerIRBuilder.getInt32(0), CallerIRBuilder.getInt32(1)});
 
-      // Store captured arguments into agg.captured
-      for (unsigned i = 0; i < LoadedCapturedArgs.size(); ++i) {
-        auto *AggCapturedElemPtr = CallerIRBuilder.CreateInBoundsGEP(
-            SharedsTy, AggCaptured,
-            {CallerIRBuilder.getInt32(0), CallerIRBuilder.getInt32(i)});
-        CallerIRBuilder.CreateAlignedStore(
-            LoadedCapturedArgs[i], AggCapturedElemPtr,
-            DL.getTypeAllocSize(LoadedCapturedArgs[i]->getType()));
-      }
+  // Store captured arguments into agg.captured
+  for (unsigned i = 0; i < LoadedCapturedArgs.size(); ++i) {
+    auto *AggCapturedElemPtr = CallerIRBuilder.CreateInBoundsGEP(
+        SharedsTy, AggCaptured,
+        {CallerIRBuilder.getInt32(0), CallerIRBuilder.getInt32(i)});
+    CallerIRBuilder.CreateAlignedStore(
+        LoadedCapturedArgs[i], AggCapturedElemPtr,
+        DL.getTypeAllocSize(LoadedCapturedArgs[i]->getType()));
+  }
 
   std::vector<Value *> TaskArgs = {DefaultOpenMPLocation,
-                                getThreadID(cal->getParent()->getParent()), NewTask};
+                                   getThreadID(cal->getParent()->getParent()),
+                                   NewTask};
   emitRuntimeCall(
       createRuntimeFunction(OpenMPRuntimeFunction::OMPRTL__kmpc_omp_task, M),
       TaskArgs, "", CallerIRBuilder);
@@ -575,13 +576,14 @@ Function* formatFunctionToTask(Function* extracted, Instruction* CallSite) {
   return OutlinedFn;
 }
 
-Function *llvm::OpenMPABI::createDetach(DetachInst &detach,
-                                        ValueToValueMapTy &DetachCtxToStackFrame,
-                                        DominatorTree &DT, AssumptionCache &AC) {
+Function *
+llvm::OpenMPABI::createDetach(DetachInst &detach,
+                              ValueToValueMapTy &DetachCtxToStackFrame,
+                              DominatorTree &DT, AssumptionCache &AC) {
   BasicBlock *detB = detach.getParent();
   Function &F = *(detB->getParent());
 
-  BasicBlock *Spawned  = detach.getDetached();
+  BasicBlock *Spawned = detach.getDetached();
   BasicBlock *Continue = detach.getContinue();
 
   Module *M = F.getParent();
@@ -611,21 +613,23 @@ void llvm::OpenMPABI::preProcessFunction(Function &F) {
   getOrCreateDefaultLocation(M);
 }
 
-
-cl::opt<bool> fastOpenMP("fast-openmp", cl::init(false), cl::Hidden,
-                       cl::desc("Attempt faster OpenMP implementation, assuming parallel outside set"));
+cl::opt<bool> fastOpenMP(
+    "fast-openmp", cl::init(false), cl::Hidden,
+    cl::desc(
+        "Attempt faster OpenMP implementation, assuming parallel outside set"));
 void llvm::OpenMPABI::postProcessFunction(Function &F) {
-  if (fastOpenMP) return;
+  if (fastOpenMP)
+    return;
 
-  auto& Context = F.getContext();
+  auto &Context = F.getContext();
   DataLayout DL(F.getParent());
 
-  std::vector<CallInst*> tasks;
-  for (BasicBlock& BB : F) {
-    for(Instruction& I : BB) {
-      if (CallInst* cal = dyn_cast_or_null<CallInst>(&I)){
-        if (cal->getCalledFunction()->getName()=="__kmpc_omp_task_alloc") {
-            tasks.push_back(cal);
+  std::vector<CallInst *> tasks;
+  for (BasicBlock &BB : F) {
+    for (Instruction &I : BB) {
+      if (CallInst *cal = dyn_cast_or_null<CallInst>(&I)) {
+        if (cal->getCalledFunction()->getName() == "__kmpc_omp_task_alloc") {
+          tasks.push_back(cal);
         }
       }
     }
@@ -633,8 +637,8 @@ void llvm::OpenMPABI::postProcessFunction(Function &F) {
 
   SmallVector<BasicBlock *, 32> Todo;
   SmallPtrSet<BasicBlock *, 4> Visited;
-  SmallVector<BasicBlock*, 32>VisitedVec;
-  for(auto a : tasks) {
+  SmallVector<BasicBlock *, 32> VisitedVec;
+  for (auto a : tasks) {
     a->getParent()->splitBasicBlock(a);
     Todo.push_back(a->getParent());
   }
@@ -645,12 +649,12 @@ void llvm::OpenMPABI::postProcessFunction(Function &F) {
       continue;
     VisitedVec.push_back(BB);
     bool foundsync = false;
-    for(Instruction& I : *BB) {
-      if (CallInst* cal = dyn_cast_or_null<CallInst>(&I)){
-        if (cal->getCalledFunction()->getName()=="__kmpc_omp_taskwait") {
-            foundsync = true;
-            BB->splitBasicBlock(++BasicBlock::iterator(cal));
-            break;
+    for (Instruction &I : *BB) {
+      if (CallInst *cal = dyn_cast_or_null<CallInst>(&I)) {
+        if (cal->getCalledFunction()->getName() == "__kmpc_omp_taskwait") {
+          foundsync = true;
+          BB->splitBasicBlock(++BasicBlock::iterator(cal));
+          break;
         }
       }
     }
@@ -662,13 +666,13 @@ void llvm::OpenMPABI::postProcessFunction(Function &F) {
     }
   }
 
-  for(int i=1; i<VisitedVec.size(); i++) {
-      for (auto P : predecessors(VisitedVec[i])) {
-        if (Visited.count(P) == 0) {
-          std::swap(VisitedVec[0], VisitedVec[i]);
-          break;
-        }
+  for (int i = 1; i < VisitedVec.size(); i++) {
+    for (auto P : predecessors(VisitedVec[i])) {
+      if (Visited.count(P) == 0) {
+        std::swap(VisitedVec[0], VisitedVec[i]);
+        break;
       }
+    }
   }
 
   CodeExtractor RegionExtractor(VisitedVec);
@@ -685,8 +689,8 @@ void llvm::OpenMPABI::postProcessFunction(Function &F) {
   FnArgNames.push_back(".global_tid.");
   FnArgNames.push_back(".bound_tid.");
 
-  //FnArgAttrs.push_back(AttributeSet::get(Context, 1, Attribute::NoAlias));
-  //FnArgAttrs.push_back(AttributeSet::get(Context, 2, Attribute::NoAlias));
+  // FnArgAttrs.push_back(AttributeSet::get(Context, 1, Attribute::NoAlias));
+  // FnArgAttrs.push_back(AttributeSet::get(Context, 2, Attribute::NoAlias));
 
   int ArgOffset = 2;
 
@@ -705,67 +709,66 @@ void llvm::OpenMPABI::postProcessFunction(Function &F) {
       AttrBuilder B;
       B.addDereferenceableAttr(
           DL.getTypeAllocSize(Arg.getType()->getPointerElementType()));
-      //FnArgAttrs.push_back(AttributeSet::get(Context, ++ArgOffset, B));
+      // FnArgAttrs.push_back(AttributeSet::get(Context, ++ArgOffset, B));
     } else {
-      //FnArgAttrs.push_back(AttributeSet());
+      // FnArgAttrs.push_back(AttributeSet());
       ++ArgOffset;
     }
   }
 
   // Create the function and set its argument properties.
   auto *VoidTy = Type::getVoidTy(Context);
-    auto *OMPRegionFnTy = FunctionType::get(VoidTy, FnParams, false);
-    auto Name = RegionFn->getName() + ".OMP";
-    Function *OMPRegionFn = dyn_cast<Function>(
-        F.getParent()->getOrInsertFunction(Name.str(), OMPRegionFnTy));
+  auto *OMPRegionFnTy = FunctionType::get(VoidTy, FnParams, false);
+  auto Name = RegionFn->getName() + ".OMP";
+  Function *OMPRegionFn = dyn_cast<Function>(
+      F.getParent()->getOrInsertFunction(Name.str(), OMPRegionFnTy));
 
-    // If this is an outermost region, skip the first 2 arguments (global_tid and
-    // bound_tid) ...
-    auto OMPArgIt = OMPRegionFn->arg_begin();
-    Value* tmp = OMPArgIt;
-    ++OMPArgIt;
-    ++OMPArgIt;
+  // If this is an outermost region, skip the first 2 arguments (global_tid and
+  // bound_tid) ...
+  auto OMPArgIt = OMPRegionFn->arg_begin();
+  Value *tmp = OMPArgIt;
+  ++OMPArgIt;
+  ++OMPArgIt;
 
-    // ... then map corresponding arguments in RegionFn and OMPRegionFn
+  // ... then map corresponding arguments in RegionFn and OMPRegionFn
 
-    auto *EntryBB = BasicBlock::Create(Context, "entry", OMPRegionFn, nullptr);
-    IRBuilder<> IRBuilder0(EntryBB);
-    tmp = IRBuilder0.CreateLoad(tmp);
+  auto *EntryBB = BasicBlock::Create(Context, "entry", OMPRegionFn, nullptr);
+  IRBuilder<> IRBuilder0(EntryBB);
+  tmp = IRBuilder0.CreateLoad(tmp);
 
-    ValueToValueMapTy VMap;
-    for (auto &Arg : RegionFn->args()) {
-      if(tmp) {
-        VMap[&Arg] = tmp;
-        tmp = nullptr;
-      } else {
-        VMap[&Arg] = &*OMPArgIt;
-        ++OMPArgIt;
+  ValueToValueMapTy VMap;
+  for (auto &Arg : RegionFn->args()) {
+    if (tmp) {
+      VMap[&Arg] = tmp;
+      tmp = nullptr;
+    } else {
+      VMap[&Arg] = &*OMPArgIt;
+      ++OMPArgIt;
+    }
+  }
+
+  SmallVector<ReturnInst *, 5> retinsts;
+  CloneFunctionInto(OMPRegionFn, RegionFn, VMap, false, retinsts);
+  IRBuilder0.CreateBr(OMPRegionFn->getBasicBlockList().getNextNode(*EntryBB));
+
+  auto FindCallToExtractedFn = [](Function *SpawningFn, Function *ExtractedFn) {
+    // Find the call instruction to the extracted region function: RegionFn.
+    CallInst *ExtractedFnCI = nullptr;
+    for (auto &BB : *SpawningFn) {
+      if (CallInst *CI = dyn_cast<CallInst>(BB.begin())) {
+        // NOTE: I use pointer equality here, is that fine?
+        if (ExtractedFn == CI->getCalledFunction()) {
+          ExtractedFnCI = CI;
+          break;
+        }
       }
     }
 
-  	SmallVector< ReturnInst *,5> retinsts;
-    CloneFunctionInto(OMPRegionFn, RegionFn, VMap, false, retinsts);
-    IRBuilder0.CreateBr(OMPRegionFn->getBasicBlockList().getNextNode(*EntryBB));
+    assert(ExtractedFnCI != nullptr &&
+           "Couldn't find the call to the extracted region function!");
 
-  auto FindCallToExtractedFn = [](Function *SpawningFn,
-                                    Function *ExtractedFn) {
-      // Find the call instruction to the extracted region function: RegionFn.
-      CallInst *ExtractedFnCI = nullptr;
-      for (auto &BB : *SpawningFn) {
-        if (CallInst *CI = dyn_cast<CallInst>(BB.begin())) {
-          // NOTE: I use pointer equality here, is that fine?
-          if (ExtractedFn == CI->getCalledFunction()) {
-            ExtractedFnCI = CI;
-            break;
-          }
-        }
-      }
-
-      assert(ExtractedFnCI != nullptr &&
-             "Couldn't find the call to the extracted region function!");
-
-      return ExtractedFnCI;
-    };
+    return ExtractedFnCI;
+  };
   auto *ExtractedFnCI = FindCallToExtractedFn(&F, RegionFn);
 
   IRBuilder<> b(ExtractedFnCI);
@@ -793,5 +796,4 @@ void llvm::OpenMPABI::postProcessFunction(Function &F) {
   RegionFn->eraseFromParent();
 }
 
-void llvm::OpenMPABI::postProcessHelper(Function &F) {
-}
+void llvm::OpenMPABI::postProcessHelper(Function &F) {}

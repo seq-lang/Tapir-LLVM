@@ -13,11 +13,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Tapir/Outline.h"
-#include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DIBuilder.h"
+#include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/IntrinsicInst.h"
-#include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/TapirUtils.h"
 
@@ -40,7 +40,8 @@ static bool definedInRegion(const SmallPtrSetImpl<BasicBlock *> &Blocks,
 /// These values must be passed in as live-ins to the function.
 static bool definedInCaller(const SmallPtrSetImpl<BasicBlock *> &Blocks,
                             Value *V) {
-  if (isa<Argument>(V)) return true;
+  if (isa<Argument>(V))
+    return true;
   if (Instruction *I = dyn_cast<Instruction>(V))
     if (!Blocks.count(I->getParent()))
       return true;
@@ -95,13 +96,15 @@ void llvm::findInputsOutputs(const SmallPtrSetImpl<BasicBlock *> &Blocks,
 // VMap values.
 //
 /// TODO: Fix the std::vector part of the type of this function.
-void llvm::CloneIntoFunction(
-    Function *NewFunc, const Function *OldFunc,
-    std::vector<BasicBlock *> Blocks, ValueToValueMapTy &VMap,
-    bool ModuleLevelChanges, SmallVectorImpl<ReturnInst *> &Returns,
-    const StringRef NameSuffix, SmallPtrSetImpl<BasicBlock *> *ExitBlocks,
-    DISubprogram *SP, ClonedCodeInfo *CodeInfo,
-    ValueMapTypeRemapper *TypeMapper, ValueMaterializer *Materializer) {
+void llvm::CloneIntoFunction(Function *NewFunc, const Function *OldFunc,
+                             std::vector<BasicBlock *> Blocks,
+                             ValueToValueMapTy &VMap, bool ModuleLevelChanges,
+                             SmallVectorImpl<ReturnInst *> &Returns,
+                             const StringRef NameSuffix,
+                             SmallPtrSetImpl<BasicBlock *> *ExitBlocks,
+                             DISubprogram *SP, ClonedCodeInfo *CodeInfo,
+                             ValueMapTypeRemapper *TypeMapper,
+                             ValueMaterializer *Materializer) {
   // Get the predecessors of the exit blocks
   SmallPtrSet<const BasicBlock *, 4> ExitBlockPreds, ClonedEBPreds;
   if (ExitBlocks)
@@ -229,11 +232,11 @@ Function *llvm::CreateHelper(
   }
 
   DEBUG({
-      dbgs() << "Function type: " << *RetTy << " f(";
-      for (Type *i : paramTy)
-	dbgs() << *i << ", ";
-      dbgs() << ")\n";
-    });
+    dbgs() << "Function type: " << *RetTy << " f(";
+    for (Type *i : paramTy)
+      dbgs() << *i << ", ";
+    dbgs() << ")\n";
+  });
 
   FunctionType *FTy = FunctionType::get(RetTy, paramTy, false);
 
@@ -245,14 +248,14 @@ Function *llvm::CreateHelper(
   // Set names for input and output arguments.
   Function::arg_iterator DestI = NewFunc->arg_begin();
   for (Value *I : Inputs)
-    if (VMap.count(I) == 0) {       // Is this argument preserved?
-      DestI->setName(I->getName()+NameSuffix); // Copy the name over...
-      VMap[I] = &*DestI++;          // Add mapping to VMap
+    if (VMap.count(I) == 0) {                    // Is this argument preserved?
+      DestI->setName(I->getName() + NameSuffix); // Copy the name over...
+      VMap[I] = &*DestI++;                       // Add mapping to VMap
     }
   for (Value *I : Outputs)
-    if (VMap.count(I) == 0) {              // Is this argument preserved?
-      DestI->setName(I->getName()+NameSuffix); // Copy the name over...
-      VMap[I] = &*DestI++;                 // Add mapping to VMap
+    if (VMap.count(I) == 0) {                    // Is this argument preserved?
+      DestI->setName(I->getName() + NameSuffix); // Copy the name over...
+      VMap[I] = &*DestI++;                       // Add mapping to VMap
     }
 
   // Copy all attributes other than those stored in the AttributeSet.  We need
@@ -280,7 +283,7 @@ Function *llvm::CreateHelper(
       Argument *NewArg = dyn_cast<Argument>(VMap[&OldArg]);
       NewArgAttrs[NewArg->getArgNo()] =
           OldAttrs.getParamAttributes(OldArg.getArgNo())
-          .removeAttribute(NewFunc->getContext(), Attribute::Returned);
+              .removeAttribute(NewFunc->getContext(), Attribute::Returned);
     }
   }
 
@@ -337,10 +340,10 @@ Function *llvm::CreateHelper(
   // The new function needs a root node because other nodes can branch to the
   // head of the region, but the entry node of a function cannot have preds.
   BasicBlock *NewEntry = BasicBlock::Create(
-      Header->getContext(), OldEntry->getName()+NameSuffix, NewFunc);
+      Header->getContext(), OldEntry->getName() + NameSuffix, NewFunc);
   // The new function also needs an exit node.
   BasicBlock *NewExit = BasicBlock::Create(
-      Header->getContext(), OldExit->getName()+NameSuffix, NewFunc);
+      Header->getContext(), OldExit->getName() + NameSuffix, NewFunc);
 
   // Add mappings to the NewEntry and NewExit.
   VMap[OldEntry] = NewEntry;
@@ -349,8 +352,8 @@ Function *llvm::CreateHelper(
   BasicBlock *NewUnwind = nullptr;
   // Create a new unwind destination for the cloned blocks if it's needed.
   if (OldUnwind) {
-    NewUnwind = BasicBlock::Create(
-        NewFunc->getContext(), OldUnwind->getName()+NameSuffix, NewFunc);
+    NewUnwind = BasicBlock::Create(NewFunc->getContext(),
+                                   OldUnwind->getName() + NameSuffix, NewFunc);
     VMap[OldUnwind] = NewUnwind;
   }
 
@@ -359,15 +362,15 @@ Function *llvm::CreateHelper(
   if (InputSyncRegion) {
     Instruction *NewSR = InputSyncRegion->clone();
     if (InputSyncRegion->hasName())
-      NewSR->setName(InputSyncRegion->getName()+NameSuffix);
+      NewSR->setName(InputSyncRegion->getName() + NameSuffix);
     NewEntry->getInstList().push_back(NewSR);
     VMap[InputSyncRegion] = NewSR;
   }
 
   // Clone Blocks into the new function.
-  CloneIntoFunction(NewFunc, OldFunc, Blocks, VMap, ModuleLevelChanges,
-                    Returns, NameSuffix, ExitBlocks, SP, CodeInfo,
-                    TypeMapper, Materializer);
+  CloneIntoFunction(NewFunc, OldFunc, Blocks, VMap, ModuleLevelChanges, Returns,
+                    NameSuffix, ExitBlocks, SP, CodeInfo, TypeMapper,
+                    Materializer);
 
   // Add a branch in the new function to the cloned Header.
   BranchInst::Create(cast<BasicBlock>(VMap[Header]), NewEntry);
@@ -377,11 +380,10 @@ Function *llvm::CreateHelper(
   // If needed, create a landing pad and resume for the unwind destination in
   // the new function.
   if (OldUnwind) {
-    LandingPadInst *LPad =
-      LandingPadInst::Create(OldUnwind->getLandingPadInst()->getType(), 1,
-                             "lpadval", NewUnwind);
+    LandingPadInst *LPad = LandingPadInst::Create(
+        OldUnwind->getLandingPadInst()->getType(), 1, "lpadval", NewUnwind);
     LPad->addClause(ConstantPointerNull::get(
-                        PointerType::getInt8PtrTy(Header->getContext())));
+        PointerType::getInt8PtrTy(Header->getContext())));
     ResumeInst::Create(LPad, NewUnwind);
   }
 
@@ -390,18 +392,23 @@ Function *llvm::CreateHelper(
 
 // Add alignment assumptions to parameters of outlined function, based on known
 // alignment data in the caller.
-void llvm::AddAlignmentAssumptions(
-    const Function *Caller, const ValueSet &Inputs, ValueToValueMapTy &VMap,
-    const Instruction *CallSite, AssumptionCache *AC, DominatorTree *DT) {
+void llvm::AddAlignmentAssumptions(const Function *Caller,
+                                   const ValueSet &Inputs,
+                                   ValueToValueMapTy &VMap,
+                                   const Instruction *CallSite,
+                                   AssumptionCache *AC, DominatorTree *DT) {
   auto &DL = Caller->getParent()->getDataLayout();
   for (Value *ArgVal : Inputs) {
     // Ignore arguments to non-pointer types
-    if (!ArgVal->getType()->isPointerTy()) continue;
+    if (!ArgVal->getType()->isPointerTy())
+      continue;
     Argument *Arg = cast<Argument>(VMap[ArgVal]);
     // Ignore arguments to non-pointer types
-    if (!Arg->getType()->isPointerTy()) continue;
+    if (!Arg->getType()->isPointerTy())
+      continue;
     // If the argument already has an alignment attribute, skip it.
-    if (Arg->getParamAlignment()) continue;
+    if (Arg->getParamAlignment())
+      continue;
     // Get any known alignment information for this argument's value.
     unsigned Align = getKnownAlignment(ArgVal, DL, CallSite, AC, DT);
     // If we have alignment data, add it as an attribute to the outlined

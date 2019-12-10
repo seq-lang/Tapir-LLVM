@@ -17,11 +17,11 @@
 namespace llvm {
 
 enum class TapirTargetType {
-  None,    // Perform no lowering
-  Serial,  // FIXME: Make this option useful.  Perhaps only outline tasks?
-  Cilk,    // Lower to the Cilk Plus ABI
-  OpenMP,  // Lower to OpenMP
-  CilkR,   // Lower to the CilkR ABI
+  None,   // Perform no lowering
+  Serial, // FIXME: Make this option useful.  Perhaps only outline tasks?
+  Cilk,   // Lower to the Cilk Plus ABI
+  OpenMP, // Lower to OpenMP
+  CilkR,  // Lower to the CilkR ABI
   Last_TapirTargetType
 };
 

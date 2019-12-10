@@ -13,9 +13,9 @@
 
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
-#include "llvm/IR/IRBuilder.h"
 #include "llvm/Transforms/Tapir/CilkABI.h"
 #include "llvm/Transforms/Tapir/CilkRABI.h"
 #include "llvm/Transforms/Tapir/OpenMPABI.h"
@@ -50,7 +50,7 @@ TapirTarget *llvm::getTapirTargetFromType(TapirTargetType Type) {
 
 bool llvm::verifyDetachedCFG(const DetachInst &Detach, DominatorTree &DT,
                              bool error) {
-  BasicBlock *Spawned  = Detach.getDetached();
+  BasicBlock *Spawned = Detach.getDetached();
   BasicBlock *Continue = Detach.getContinue();
   Value *SyncRegion = Detach.getSyncRegion();
   BasicBlockEdge DetachEdge(Detach.getParent(), Spawned);
@@ -66,20 +66,22 @@ bool llvm::verifyDetachedCFG(const DetachInst &Detach, DominatorTree &DT,
     if (!FunctionPieces.insert(BB).second)
       continue;
 
-    TerminatorInst* Term = BB->getTerminator();
-    if (Term == nullptr) return false;
-    if (ReattachInst* Inst = dyn_cast<ReattachInst>(Term)) {
+    TerminatorInst *Term = BB->getTerminator();
+    if (Term == nullptr)
+      return false;
+    if (ReattachInst *Inst = dyn_cast<ReattachInst>(Term)) {
       // Only analyze reattaches going to the same continuation.
-      if (Inst->getSuccessor(0) != Continue) continue;
+      if (Inst->getSuccessor(0) != Continue)
+        continue;
       continue;
-    } else if (DetachInst* Inst = dyn_cast<DetachInst>(Term)) {
+    } else if (DetachInst *Inst = dyn_cast<DetachInst>(Term)) {
       assert(Inst != &Detach && "Found recursive Detach!");
       Todo.push_back(Inst->getDetached());
       Todo.push_back(Inst->getContinue());
       if (Inst->hasUnwindDest())
         Todo.push_back(Inst->getUnwindDest());
       continue;
-    } else if (SyncInst* Inst = dyn_cast<SyncInst>(Term)) {
+    } else if (SyncInst *Inst = dyn_cast<SyncInst>(Term)) {
       // Only sync inner elements, consider as branch
       Todo.push_back(Inst->getSuccessor(0));
       continue;
@@ -101,7 +103,8 @@ bool llvm::verifyDetachedCFG(const DetachInst &Detach, DominatorTree &DT,
     } else if (isa<UnreachableInst>(Term)) {
       continue;
     } else {
-      llvm_unreachable("Detached block did not absolutely terminate in reattach");
+      llvm_unreachable(
+          "Detached block did not absolutely terminate in reattach");
     }
   }
   {
@@ -126,10 +129,10 @@ bool llvm::verifyDetachedCFG(const DetachInst &Detach, DominatorTree &DT,
       // Make sure that the control flow through these exception-handling blocks
       // doesn't reattach to the detached CFG's continuation.
       DEBUG({
-          if (ReattachInst *RI = dyn_cast<ReattachInst>(BB->getTerminator()))
-            assert(RI->getSuccessor(0) != Continue &&
-                   "Exit block reaches a reattach to the continuation.");
-        });
+        if (ReattachInst *RI = dyn_cast<ReattachInst>(BB->getTerminator()))
+          assert(RI->getSuccessor(0) != Continue &&
+                 "Exit block reaches a reattach to the continuation.");
+      });
 
       // Stop searching down this path upon finding a detached rethrow.
       if (isDetachedRethrow(BB->getTerminator(), SyncRegion))
@@ -142,10 +145,9 @@ bool llvm::verifyDetachedCFG(const DetachInst &Detach, DominatorTree &DT,
   return true;
 }
 
-bool llvm::populateDetachedCFG(
-    const DetachInst &Detach, DominatorTree &DT,
-    SmallPtrSetImpl<BasicBlock *> &FunctionPieces,
-    SmallPtrSetImpl<BasicBlock *> &ExitBlocks) {
+bool llvm::populateDetachedCFG(const DetachInst &Detach, DominatorTree &DT,
+                               SmallPtrSetImpl<BasicBlock *> &FunctionPieces,
+                               SmallPtrSetImpl<BasicBlock *> &ExitBlocks) {
   SmallVector<BasicBlock *, 32> Todo;
   SmallVector<BasicBlock *, 4> WorkListEH;
 
@@ -166,16 +168,18 @@ bool llvm::populateDetachedCFG(
     DEBUG(dbgs() << "  Found block " << BB->getName() << "\n");
 
     TerminatorInst *Term = BB->getTerminator();
-    if (Term == nullptr) return false;
+    if (Term == nullptr)
+      return false;
     if (isa<ReattachInst>(Term)) {
       // Only analyze reattaches going to the same continuation.
-      if (Term->getSuccessor(0) != Continue) continue;
+      if (Term->getSuccessor(0) != Continue)
+        continue;
       // Replace the reattach with a branch.  This replacement prevents the
       // outlining process from mistakenly finding the sync region as a input to
       // the task.
       ReplaceInstWithInst(Term, BranchInst::Create(Continue));
       continue;
-    } else if (DetachInst* Inst = dyn_cast<DetachInst>(Term)) {
+    } else if (DetachInst *Inst = dyn_cast<DetachInst>(Term)) {
       assert(Inst != &Detach && "Found recursive Detach!");
       Todo.push_back(Inst->getDetached());
       Todo.push_back(Inst->getContinue());
@@ -196,7 +200,8 @@ bool llvm::populateDetachedCFG(
           if (!DT.dominates(DetachEdge, Succ)) {
             // We assume that this block is an exception-handling block and save
             // it for later processing.
-            DEBUG(dbgs() << "  Exit block to search " << Succ->getName() << "\n");
+            DEBUG(dbgs() << "  Exit block to search " << Succ->getName()
+                         << "\n");
             ExitBlocks.insert(Succ);
             WorkListEH.push_back(Succ);
           } else {
@@ -212,7 +217,8 @@ bool llvm::populateDetachedCFG(
     } else if (isa<UnreachableInst>(Term)) {
       continue;
     } else {
-      llvm_unreachable("Detached block did not absolutely terminate in reattach");
+      llvm_unreachable(
+          "Detached block did not absolutely terminate in reattach");
     }
   }
 
@@ -239,10 +245,10 @@ bool llvm::populateDetachedCFG(
       // Make sure that the control flow through these exception-handling blocks
       // doesn't reattach to the detached CFG's continuation.
       DEBUG({
-          if (ReattachInst *RI = dyn_cast<ReattachInst>(BB->getTerminator()))
-            assert(RI->getSuccessor(0) != Continue &&
-                   "Exit block reaches a reattach to the continuation.");
-        });
+        if (ReattachInst *RI = dyn_cast<ReattachInst>(BB->getTerminator()))
+          assert(RI->getSuccessor(0) != Continue &&
+                 "Exit block reaches a reattach to the continuation.");
+      });
 
       // Stop searching down this path upon finding a detached rethrow.
       if (isDetachedRethrow(BB->getTerminator(), SyncRegion))
@@ -261,16 +267,16 @@ bool llvm::populateDetachedCFG(
   }
 
   DEBUG({
-      dbgs() << "Exit blocks:";
-      for (BasicBlock *Exit : ExitBlocks) {
-        if (DT.dominates(DetachEdge, Exit))
-          dbgs() << "(dominated)";
-        else
-          dbgs() << "(shared)";
-        dbgs() << *Exit;
-      }
-      dbgs() << "\n";
-    });
+    dbgs() << "Exit blocks:";
+    for (BasicBlock *Exit : ExitBlocks) {
+      if (DT.dominates(DetachEdge, Exit))
+        dbgs() << "(dominated)";
+      else
+        dbgs() << "(shared)";
+      dbgs() << *Exit;
+    }
+    dbgs() << "\n";
+  });
 
   return true;
 }
@@ -279,9 +285,10 @@ bool llvm::populateDetachedCFG(
 /// in place of the original detach instruction.  Returns a pointer to the
 /// extracted function.  If CallSite is not null, then sets *CallSite to point
 /// to the new call or invoke instruction.
-Function *llvm::extractDetachBodyToFunction(
-    DetachInst &Detach, DominatorTree &DT, AssumptionCache &AC,
-    Instruction **CallSite) {
+Function *llvm::extractDetachBodyToFunction(DetachInst &Detach,
+                                            DominatorTree &DT,
+                                            AssumptionCache &AC,
+                                            Instruction **CallSite) {
   BasicBlock *Detacher = Detach.getParent();
   Function &F = *(Detacher->getParent());
 
@@ -297,8 +304,7 @@ Function *llvm::extractDetachBodyToFunction(
 
   assert(Detached->getUniquePredecessor() &&
          "Entry block of detached task has multiple predecessors.");
-  assert(Detached->getUniquePredecessor() == Detacher &&
-         "Broken CFG.");
+  assert(Detached->getUniquePredecessor() == Detacher && "Broken CFG.");
 
   if (!populateDetachedCFG(Detach, DT, FunctionPieces, ExitBlocks))
     return nullptr;
@@ -307,7 +313,8 @@ Function *llvm::extractDetachBodyToFunction(
   DEBUG(dbgs() << "Function pieces:");
   for (BasicBlock *BB : FunctionPieces) {
     DEBUG(dbgs() << *BB);
-    if (ExitBlocks.count(BB)) continue;
+    if (ExitBlocks.count(BB))
+      continue;
     for (BasicBlock *Pred : predecessors(BB)) {
       if (Pred == Detach.getParent()) {
         // Verify the CFG structure of the entry block of the detached task.
@@ -327,12 +334,12 @@ Function *llvm::extractDetachBodyToFunction(
 
       // There should be no other predecessor blocks of the detached task.
       DEBUG({
-          if (!(FunctionPieces.count(Pred) || !DT.isReachableFromEntry(Pred)))
-            dbgs() << "Problem block found: " << *BB
-                   << "reachable via " << *Pred;
-        });
-      assert((FunctionPieces.count(Pred) || !DT.isReachableFromEntry(Pred)) &&
-             "Block inside of detached task is reachable from outside the task");
+        if (!(FunctionPieces.count(Pred) || !DT.isReachableFromEntry(Pred)))
+          dbgs() << "Problem block found: " << *BB << "reachable via " << *Pred;
+      });
+      assert(
+          (FunctionPieces.count(Pred) || !DT.isReachableFromEntry(Pred)) &&
+          "Block inside of detached task is reachable from outside the task");
     }
   }
 
@@ -340,9 +347,9 @@ Function *llvm::extractDetachBodyToFunction(
   SetVector<Value *> BodyInputs, Outputs;
   findInputsOutputs(FunctionPieces, BodyInputs, Outputs, &ExitBlocks, &DT);
   DEBUG({
-      for (Value *V : Outputs)
-        dbgs() << "EL output: " << *V << "\n";
-    });
+    for (Value *V : Outputs)
+      dbgs() << "EL output: " << *V << "\n";
+  });
   assert(Outputs.empty() &&
          "All results from detached task should be passed by memory already.");
 
@@ -357,12 +364,12 @@ Function *llvm::extractDetachBodyToFunction(
     if (F.hasStructRetAttr() && !StructTaskArgs) {
       Function::arg_iterator ArgIter = F.arg_begin();
       if (F.hasParamAttribute(0, Attribute::StructRet))
-	if (BodyInputs.count(&*ArgIter))
-	  SRetInput = &*ArgIter;
+        if (BodyInputs.count(&*ArgIter))
+          SRetInput = &*ArgIter;
       if (F.hasParamAttribute(1, Attribute::StructRet)) {
-	++ArgIter;
-	if (BodyInputs.count(&*ArgIter))
-	  SRetInput = &*ArgIter;
+        ++ArgIter;
+        if (BodyInputs.count(&*ArgIter))
+          SRetInput = &*ArgIter;
       }
     }
     if (SRetInput) {
@@ -373,9 +380,10 @@ Function *llvm::extractDetachBodyToFunction(
     }
     // Add the remaining inputs.
     for (Value *V : BodyInputs) {
-      if (V == SyncRegion) continue;
+      if (V == SyncRegion)
+        continue;
       if (!Inputs.count(V)) {
-	Inputs.insert(V);
+        Inputs.insert(V);
         StructInputs.push_back(V);
         StructIT.push_back(V->getType());
       }
@@ -420,16 +428,14 @@ Function *llvm::extractDetachBodyToFunction(
   ValueToValueMapTy VMap;
   Function *Extracted;
   {
-    SmallVector<ReturnInst *, 4> Returns;  // Ignore returns cloned.
+    SmallVector<ReturnInst *, 4> Returns; // Ignore returns cloned.
     std::vector<BasicBlock *> Blocks(FunctionPieces.begin(),
                                      FunctionPieces.end());
 
-    Extracted = CreateHelper(HelperInputs, Outputs, Blocks,
-                             Detached, Detacher, Continue,
-                             VMap, F.getParent(),
-                             F.getSubprogram() != nullptr, Returns, ".cilk",
-                             &ExitBlocks, nullptr, nullptr, nullptr, nullptr,
-                             nullptr);
+    Extracted = CreateHelper(
+        HelperInputs, Outputs, Blocks, Detached, Detacher, Continue, VMap,
+        F.getParent(), F.getSubprogram() != nullptr, Returns, ".cilk",
+        &ExitBlocks, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     assert(Returns.empty() && "Returns cloned when cloning detached CFG.");
 
@@ -475,7 +481,8 @@ Function *llvm::extractDetachBodyToFunction(
     // Collect reattach instructions.
     SmallVector<Instruction *, 4> ReattachPoints;
     for (BasicBlock *Pred : predecessors(Continue)) {
-      if (!isa<ReattachInst>(Pred->getTerminator())) continue;
+      if (!isa<ReattachInst>(Pred->getTerminator()))
+        continue;
       if (FunctionPieces.count(Pred))
         ReattachPoints.push_back(cast<BasicBlock>(VMap[Pred])->getTerminator());
     }

@@ -17,9 +17,9 @@
 #include "llvm-c/Initialization.h"
 #include "llvm-c/Transforms/Tapir.h"
 #include "llvm/Analysis/Passes.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/InitializePasses.h"
-#include "llvm/IR/LegacyPassManager.h"
 
 using namespace llvm;
 
@@ -39,7 +39,7 @@ void LLVMAddLoopSpawningPass(LLVMPassManagerRef PM, TapirTargetType tapirType) {
   unwrap(PM)->add(createLoopSpawningPass(tapirType));
 }
 
-void LLVMAddLowerTapirToTargetPass(LLVMPassManagerRef PM, TapirTargetType tapirType) {
-  unwrap(PM)->add(createLowerTapirToTargetPass(tapirType));
+void LLVMAddLowerTapirToTargetPass(LLVMPassManagerRef PM, TapirTargetType
+tapirType) { unwrap(PM)->add(createLowerTapirToTargetPass(tapirType));
 }
 */

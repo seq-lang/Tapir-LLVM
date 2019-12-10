@@ -27,8 +27,7 @@ public:
                       LoopInfo *LI, DominatorTree *DT, AssumptionCache *AC,
                       OptimizationRemarkEmitter &ORE)
       : LoopOutline(OrigLoop, SE, LI, DT, AC, ORE),
-        SpecifiedGrainsize(Grainsize)
-  {}
+        SpecifiedGrainsize(Grainsize) {}
 
   bool processLoop();
 
@@ -39,22 +38,24 @@ protected:
   Value *canonicalizeLoopLatch(PHINode *IV, Value *Limit);
 
   unsigned SpecifiedGrainsize;
-// private:
-//   /// Report an analysis message to assist the user in diagnosing loops that are
-//   /// not transformed.  These are handled as LoopAccessReport rather than
-//   /// VectorizationReport because the << operator of LoopSpawningReport returns
-//   /// LoopAccessReport.
-//   void emitAnalysis(const LoopAccessReport &Message) const {
-//     emitAnalysisDiag(OrigLoop, *ORE, Message);
-//   }
+  // private:
+  //   /// Report an analysis message to assist the user in diagnosing loops
+  //   that are
+  //   /// not transformed.  These are handled as LoopAccessReport rather than
+  //   /// VectorizationReport because the << operator of LoopSpawningReport
+  //   returns
+  //   /// LoopAccessReport.
+  //   void emitAnalysis(const LoopAccessReport &Message) const {
+  //     emitAnalysisDiag(OrigLoop, *ORE, Message);
+  //   }
 };
 
 class CilkABI : public TapirTarget {
 public:
   CilkABI();
   Value *lowerGrainsizeCall(CallInst *GrainsizeCall) override final;
-  void createSync(SyncInst &inst, ValueToValueMapTy &DetachCtxToStackFrame)
-    override final;
+  void createSync(SyncInst &inst,
+                  ValueToValueMapTy &DetachCtxToStackFrame) override final;
 
   Function *createDetach(DetachInst &Detach,
                          ValueToValueMapTy &DetachCtxToStackFrame,
@@ -66,9 +67,8 @@ public:
   struct __cilkrts_pedigree {};
   struct __cilkrts_stack_frame {};
   struct __cilkrts_worker {};
-
 };
 
-}  // end of llvm namespace
+} // namespace llvm
 
 #endif
