@@ -184,17 +184,24 @@ Constant *createRuntimeFunction(OpenMPRuntimeFunction Function, Module *M) {
   return RTLFn;
 }
 
-CallInst *emitRuntimeCall(Value *Callee, ArrayRef<Value *> Args,
-                          const Twine &Name, BasicBlock *Parent) {
-  IRBuilder<> Builder(Parent);
-  CallInst *call = Builder.CreateCall(Callee, Args, None, Name);
-  return call;
+Instruction *emitRuntimeCall(Value *Callee, ArrayRef<Value *> Args,
+                             const Twine &Name, IRBuilder<> &IRBuilder,
+                             BasicBlock *Normal = nullptr,
+                             BasicBlock *Unwind = nullptr) {
+
+  if (Normal) {
+    return IRBuilder.CreateInvoke(Callee, Normal, Unwind, Args, None, Name);
+  } else {
+    return IRBuilder.CreateCall(Callee, Args, None, Name);
+  }
 }
 
-CallInst *emitRuntimeCall(Value *Callee, ArrayRef<Value *> Args,
-                          const Twine &Name, IRBuilder<> &IRBuilder) {
-  CallInst *call = IRBuilder.CreateCall(Callee, Args, None, Name);
-  return call;
+Instruction *emitRuntimeCall(Value *Callee, ArrayRef<Value *> Args,
+                             const Twine &Name, BasicBlock *Parent,
+                             BasicBlock *Normal = nullptr,
+                             BasicBlock *Unwind = nullptr) {
+  IRBuilder<> Builder(Parent);
+  emitRuntimeCall(Callee, Args, Name, Builder, Normal, Unwind);
 }
 
 Value *getThreadID(Function *F, IRBuilder<> &IRBuilder) {
@@ -457,11 +464,21 @@ typedef llvm::TypeBuilder<pshareds, false> pshareds_builder;
 Function *formatFunctionToTask(Function *extracted, Instruction *CallSite) {
   // TODO: Fix this function to support call sites that are invokes instead of
   // calls.
-  CallInst *cal = dyn_cast<CallInst>(CallSite);
-  assert(cal && "Call instruction for task not found.");
+  BasicBlock *Normal = nullptr;
+  BasicBlock *Unwind = nullptr;
   std::vector<Value *> LoadedCapturedArgs;
-  for (auto &a : cal->arg_operands()) {
-    LoadedCapturedArgs.push_back(a);
+  if (CallInst *cal = dyn_cast<CallInst>(CallSite)) {
+    for (auto &a : cal->arg_operands()) {
+      LoadedCapturedArgs.push_back(a);
+    }
+  } else if (InvokeInst *inv = dyn_cast<InvokeInst>(CallSite)) {
+    for (auto &a : inv->arg_operands()) {
+      LoadedCapturedArgs.push_back(a);
+    }
+    Normal = inv->getNormalDest();
+    Unwind = inv->getUnwindDest();
+  } else {
+    assert(false && "Call/invoke instruction for task not found.");
   }
 
   Module *M = extracted->getParent();
@@ -469,7 +486,7 @@ Function *formatFunctionToTask(Function *extracted, Instruction *CallSite) {
   DataLayout DL(M);
   auto *SharedsTy = createSharedsTy(extracted);
   auto *SharedsPtrTy = PointerType::getUnqual(SharedsTy);
-  IRBuilder<> CallerIRBuilder(cal);
+  IRBuilder<> CallerIRBuilder(CallSite);
   auto *SharedsTySize =
       CallerIRBuilder.getInt64(DL.getTypeAllocSize(SharedsTy));
   auto *KmpTaskTTy = createKmpTaskTTy(C);
@@ -538,7 +555,7 @@ Function *formatFunctionToTask(Function *extracted, Instruction *CallSite) {
   auto *TaskFlags = CallerIRBuilder.getInt32(1);
   std::vector<Value *> AllocArgs = {
       DefaultOpenMPLocation,
-      getThreadID(cal->getParent()->getParent()),
+      getThreadID(CallSite->getParent()->getParent()),
       TaskFlags,
       KmpTaskTWithPrivatesTySize,
       SharedsTySize,
@@ -564,14 +581,14 @@ Function *formatFunctionToTask(Function *extracted, Instruction *CallSite) {
         DL.getTypeAllocSize(LoadedCapturedArgs[i]->getType()));
   }
 
-  std::vector<Value *> TaskArgs = {DefaultOpenMPLocation,
-                                   getThreadID(cal->getParent()->getParent()),
-                                   NewTask};
+  std::vector<Value *> TaskArgs = {
+      DefaultOpenMPLocation, getThreadID(CallSite->getParent()->getParent()),
+      NewTask};
   emitRuntimeCall(
       createRuntimeFunction(OpenMPRuntimeFunction::OMPRTL__kmpc_omp_task, M),
-      TaskArgs, "", CallerIRBuilder);
+      TaskArgs, "", CallerIRBuilder, Normal, Unwind);
 
-  cal->eraseFromParent();
+  CallSite->eraseFromParent();
   extracted->eraseFromParent();
   return OutlinedFn;
 }
